@@ -1,0 +1,79 @@
+theory EncWrapDec
+begin
+
+builtins: symmetric-encryption
+
+/*
+ * Protocol:	Minimal example of handle-based crypto
+ * Modeler: 	Robert Kunnemann
+ * Date: 	April 2012
+ *
+ * Status: 	working
+
+ This example demonstrates the verification problem that we face when
+ reasoning about handle-based cryptography. The protocol is simple. It models
+ a crypto coprocessor that can generate new keys, use them to encrypt data,
+ and wrap keys with other stored keys.
+
+ */
+
+rule NewKey: 
+  [ Fr(~k) ] --[ NewKey(~k) ]-> [ !Store(~k),Init(~k)]
+
+rule setWrap:
+ [!Store(k), Init(k)] --[SetWrap(k)]-> [ !Wrap(k)] 
+rule setDec:
+ [!Store(k), Init(k)] --[SetDec(k) ]-> [ !Dec(k)]
+
+
+/* Encrypt a message using a key referenced by a handle  */
+rule EncryptMsg:
+  [ !Store(k), !Dec(k), In(m) ] 
+  --[EncUsing(k,m)]->
+  [ Out( senc{m}k ) ]
+
+/* Wrap a key reference by a handle using another key referenced by a second
+ * handle */
+rule WrapKey:
+  [ !Store(k1), !Store(k2), !Wrap(k1) ] --[WrapUsing(k1,k2)]-> [ Out( senc{k2}k1 ) ]
+rule DecMsg:
+  [!Store(k),!Dec(k),In(senc{m}k)] --[DecUsing(k,m)]-> [Out(m)]
+rule DecMsg2: //This leads to non-termination
+  [!Store(k),!Dec(k),In(c)] --[DecIllegal(k,c)]-> [Out(sdec(c,k))]
+
+
+lemma test1and_a_half[reuse,use_induction]: //This invariant can be proven automatically.. it is very useful.
+	"All k m #t1. DecUsing(k,m)@t1 ==> ( Ex k2 #t2 #t3. NewKey(k2)@t2 & Ded(k2)@t3 & t2<t1 & t3<t1)
+	| Ex #t2 . EncUsing(k,m)@t2 & t2<t1 
+"
+
+/* not sure if this helps..
+lemma inv2[reuse,invariant]: 
+	"All k m #t1. DecIllegal(k,c)@t1 ==> ( Ex k2 #t2 #t3. NewKey(k2)@t2 & Ded(k2)@t3 & t2<t1 & t3<t1)
+	| Ex #t2 m. EncUsing(k,m)@t2 & t2<t1 & c=senc(m,k) 
+"*/
+
+lemma test2[reuse,use_induction]: //This invariant is not necessary
+	"All k m #t1. WrapUsing(k,m)@t1 ==> Ex #t2. NewKey(k)@t2 & t2<t1"
+
+//Does not help atm.
+//lemma wa_state[reuse,invariant]:
+//	"All k m #t1. DecUsing(k,m)@t1 ==> Ex #t2 . Ded(m)@t2 & #t1 < #t2 "
+//lemma invariant_never_dec_and_wrap_with_same_key[reuse, invariant]:
+//	"not (Ex k k2 m #t1 #t2. WrapUsing(k,k2)@t1 & DecUsing(k,m)@t2)" 
+//Hmm this should at least be proveable. ... but it is not
+//lemma double_decryption_does_not_help[reuse,invariant]:
+	//"All #t1 k1 k2 m. K(senc{senc{m}k1}k2)@#t1 ==> (Ex #t2.Ded(senc{m}k1)@t2) "
+
+lemma NewKey_invariant [reuse, use_induction]:
+  "not(Ex #i #j k. NewKey(k) @ i & Ded(k) @ j) "
+
+/* This property talks only about standard traces that do not refer to the
+ * actions of construction rules. It can be proven thanks to the
+ * NewKey_invariant proven before. Try an interactive proof after removing the
+ * 'reuse' flag above to see what goes wrong without induction and the 'Ded'
+ * facts. */
+lemma NewKey_secrecy:
+  "not(Ex #i #j k. NewKey(k) @ i & K(k) @ j) "
+
+end
